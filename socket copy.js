@@ -1,3 +1,4 @@
+
 const WebSocket = require('ws');
 const commands = require('./commands.json');
 
@@ -5,26 +6,28 @@ const USER_NAME = process.env.USER_NAME;
 const PASSWORD = process.env.PASSWORD;
 
 function compare_mess_resp(mess, resp) {
-    if (mess.command !== resp.command) {
+    if (mess.command != resp.command) {
         return false;
     }
     if (mess.command in commands) {
         for (let [mess_key, resp_key] of Object.entries(commands[mess.command])) {
             if (mess_key in mess.headers) {
                 let mess_val = mess.headers[mess_key];
-                let resp_val = resp_key.split('.').reduce((o, k) => o && o[k], resp.content);
-                if (typeof(mess_val) === "string" && typeof(resp_val) === "string") {
-                    if (mess_val.toLowerCase() !== resp_val.toLowerCase()) {
+                let resp_val = resp_key.split('.').reduce((o, k) => o && o[k], resp.content)
+                if (typeof(mess_val) == "string" && typeof(resp_val) == "string") {
+                    if (mess_val.toLowerCase() != resp_val.toLowerCase()) {
                         return false;
                     }
-                } else if (mess_val !== resp_val) {
+                }
+                else if (mess_val != resp_val) {
                     return false;
                 }
             }
-        }
-    } else {
-        for (const header in mess.headers) {
-            if (mess.headers[header] === resp.content[header]) {
+        }    
+    }
+    else {
+        for (header in mess.headers) {
+            if (mess.headers[header] == resp.content[header]) {
                 return false;
             }
         }
@@ -35,7 +38,7 @@ function compare_mess_resp(mess, resp) {
 function connect(servers, header) {
     let socket = servers[header].socket = new WebSocket(servers[header].url);
     socket.addEventListener('open', (event) => {
-        console.log(`### socket ${header} connected ###`);
+        console.log(`### socket ${header} connected ###`)
         socket.send(`<msg t='sys'><body action='login' r='0'><login z='${header}'><nick><![CDATA[]]></nick><pword><![CDATA[1065004%fr%0]]></pword></login></body></msg>`);
         socket.send(`%xt%${header}%lli%1%{"CONM":175,"RTM":24,"ID":0,"PL":1,"NOM":"${USER_NAME}","PW":"${PASSWORD}","LT":null,"LANG":"fr","DID":"0","AID":"1674256959939529708","KID":"","REF":"https://empire.goodgamestudios.com","GCI":"","SID":9,"PLFID":1}%`);
     });
@@ -43,24 +46,19 @@ function connect(servers, header) {
     socket.addEventListener('message', async (event) => {
         console.log(`Received message: ${event.data}`); // Logging der Rohdaten
         let response = event.data.toString().split("%");
-
-        response = {
-            server: header,
-            command: response[2],
-            return_code: response[4],
-            content: response[5]
-        };
-
+        // console.log(`Raw response split: ${JSON.stringify(response)}`); // Logging der aufgeteilten Antwort
+    
+        response = {server: header, command: response[2], return_code: response[4], content: response[5]};
+        
         try {
             response.content = JSON.parse(response.content ?? "{}");
-        } catch (error) {
-            console.error(`Error parsing response content: ${error.message}`);
-            response.content = { error: "Invalid JSON format" };
+            // console.log(`Parsed response content: ${JSON.stringify(response.content)}`);
         }
-
-        // Speichere die letzte empfangene Nachricht
-        servers[header].lastReceivedMessage = response;
-
+        catch (error) {
+            console.error(`Error parsing response content: ${error.message}`); // Fehlerbehandlung für JSON Parsing
+            response.content = { error: "Invalid JSON format" }; // Fallback für ungültiges JSON
+        }
+    
         if (response.command === "lli") {
             if (response.return_code === "0") {
                 ping_socket(socket, header);
@@ -81,7 +79,7 @@ function connect(servers, header) {
                 servers[header].responses.push(response);
             }
         }
-    });
+    });    
 
     socket.addEventListener('error', (event) => {
         console.log(`### error in socket ${header} ###`);
@@ -96,55 +94,58 @@ function connect(servers, header) {
         console.log(`### socket ${header} closed ${servers[header].reconnect ? "" : "permanently "}###`);
         if (servers[header].reconnect) {
             setTimeout(() => connect(servers, header), 10000);
-        } else {
+        }
+        else {
             delete servers[header];
         }
     });
 }
 
+// async function getSocketResponse(servers, message, nb_try) {
+//     if (nb_try < 20) {
+//         let response;
+//         response = servers[message.server].responses.find(response => compare_mess_resp(message, response));
+//         if (response != undefined) {
+//             servers[response.server].responses.splice(servers[response.server].responses.indexOf(response), 1);
+//             servers[message.server].messages.splice(servers[message.server].messages.indexOf(message), 1);
+//             return response;    
+//         }
+//         else {
+//             return await new Promise(resolve => setTimeout(() => resolve(getSocketResponse(servers, message, nb_try + 1)), 50))
+//         }
+//     }
+//     else {
+//         servers[message.server].messages.splice(servers[message.server].messages.indexOf(message), 1);
+//         return {server: message.server, command: message.command, return_code: "-1", content: {}};
+//     }
+// }
 async function getSocketResponse(servers, message, nb_try) {
     if (nb_try < 20) {
         let response;
         response = servers[message.server].responses.find(response => compare_mess_resp(message, response));
-
+        
         // Logging der empfangenen Nachrichten
         if (response !== undefined) {
-            console.log("Response received:", JSON.stringify(response)); // Komprimierte Ausgabe
+            console.log("Response received:", response);
             servers[response.server].responses.splice(servers[response.server].responses.indexOf(response), 1);
             servers[message.server].messages.splice(servers[message.server].messages.indexOf(message), 1);
-            return response;
+            return response;    
         } else {
             console.log("No response yet, waiting...");
-
-            // Verwendung der letzten empfangenen Nachricht
-            const lastReceivedMessage = servers[message.server].lastReceivedMessage;
-            if (lastReceivedMessage && lastReceivedMessage.command === message.command) {
-                return lastReceivedMessage; // Warten auf die richtige Antwort
-            }
-
             return await new Promise(resolve => setTimeout(() => resolve(getSocketResponse(servers, message, nb_try + 1)), 50));
         }
     } else {
         servers[message.server].messages.splice(servers[message.server].messages.indexOf(message), 1);
-        return { server: message.server, command: message.command, return_code: "-1", content: { error: "No data received after multiple attempts" } };
+        return {server: message.server, command: message.command, return_code: "-1", content: {error: "No data received after multiple attempts"}};
     }
 }
 
+
 function ping_socket(socket, header) {
-    if (socket.readyState !== WebSocket.CLOSED && socket.readyState !== WebSocket.CLOSING) {
+    if (socket.readyState != WebSocket.CLOSED && socket.readyState != WebSocket.CLOSING) {
         socket.send(`%xt%${header}%pin%1%<RoundHouseKick>%`);
         setTimeout(() => ping_socket(socket, header), 60000);
     }
-}
-
-function prepareRequestUrl(server, command, header) {
-    const request = `%xt%${server}%${command}%1%${header}%`;
-    
-    const encodedRequest = encodeURIComponent(request);
-    
-    const url = `https://psychic-space-potato-v5g69qgwv54c6xpw-3000.app.github.dev/${server}/${command}/${encodedRequest}`;
-    
-    return url;
 }
 
 module.exports = { connect, getSocketResponse };
