@@ -5,9 +5,6 @@ const USER_NAME = process.env.USER_NAME;
 const PASSWORD = process.env.PASSWORD;
 
 function compare_mess_resp(mess, resp) {
-    if (mess.command !== resp.command) {
-        return false;
-    }
     if (mess.command in commands) {
         for (let [mess_key, resp_key] of Object.entries(commands[mess.command])) {
             if (mess_key in mess.headers) {
